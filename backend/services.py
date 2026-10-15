@@ -8,6 +8,9 @@ from pathlib import Path
 from .database import get_connection , init_db , seed_if_empty
 
 
+from .models import FlightOffer , HotelOffer , Booking
+
+
 
 
 
@@ -42,6 +45,59 @@ class TravelService:
 
 
 
+
+    def searech_flights(self , origin : str | None = None , destination : str |None = None , departure_date : str |None = None , max_price : float |None = None , only_available : bool = True  ) -> list[Flight]:
+        clauses = list[str] = []
+        params = list[object] = []
+
+
+        if origin:
+            clauses.append("LOWER(origin) = LOWER(?)")
+            params.append(origin.strip())
+
+        if destination:
+            clauses.append("LOWER(destination) = LOWER(?)")
+            params.append(destination.strip())
+
+        if departure_date:
+            clauses.append("departure_date = ?")
+            params.append(departure_date)
+
+        if max_price is not None:
+            clauses.append("price <= ?")
+            params.append(max_price)
+
+        if only_available:
+            clauses.append("seats_available > 0")
+
+
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else "
+        sql = f"SELECT * FROM flights {where} ORDER BY price ASC"
+        with get_connection(self.db_path) as conn:
+            rows= conn.execute(sql , params).fetchall()
+        return [self._row_to_flight(row) for row in rows]
+
+        
+
+
+
+   @staticmethod
+   def _row_to_flight(row : object) -> FlightOffer:
+    r= dict(row)
+    return FlightOffer(
+        id = r["id"],
+        origin = r["origin"],
+        destination = r["destination"],
+        departure_date = r["departure_date"],
+        departure_time = r["departure_time"],
+        arrival_time = r["arrival_time"],
+        duration_minutes = int(r["duration_minutes"]),
+        airline = r["airline"],
+        flight_number = r["flight_number"],
+        price = float(r["price"]),
+        seats_available = int(r["seats_available"]),
+
+    )
 
     
     
