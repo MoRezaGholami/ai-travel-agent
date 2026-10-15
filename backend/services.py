@@ -246,5 +246,76 @@ class TravelService:
         )
 
 
+
+    def cancel_booking(self , booking_id : str) -> Booking:
+        with get_connection(self.db_path) as conn:
+            row = conn.execute("SELECT * FROM bookings WHERE id = ?" , (booking_id ,)).fetchone()
+            if row is None :
+                raise ValueError(f"Booking not found: {booking_id}")
+            if row["status"] != "confirmed":
+                raise ValueError(f"Booking {booking_id} is not confirmed")
+
+
+            details = json.loads(row["details_json"])
+            if row["booking_type"] == "flight":
+                seats = int(details.get("seats" , 1))
+                conn.execute("UPDATE flights SET seats_available = seats_available + ? WHERE id = ?" , (seats , row["item_id"]) , )
+            else : 
+                rooms = int(details.get("rooms" , 1))
+                conn.execute("UPDATE hotels SET rooms_available = rooms_available + ? WHERE id = ?" , (rooms , row["item_id"]) , )
+
+            conn.execute("UPDATE bookings SET status = 'cancelled' WHERE id = ?" , (booking_id ,))
+            conn.commit()
+            return Booking(
+                id=row["id"],
+                booking_type=row["booking_type"],
+                item_id=row["item_id"],
+                user_name=row["user_name"],
+                status="cancelled",
+                total_price=float(row["total_price"]),
+                created_at=row["created_at"],
+                details=details,
+            )
+
+    def get_booking(self , booking_id : str) -> Booking:
+        with get_connection(self.db_path) as conn:
+            row = conn.execute("SELECT * FROM bookings WHERE id = ?" , (booking_id ,)).fetchone()
+            if row is None :
+                raise ValueError(f"Booking not found: {booking_id}")
+            return self._row_to_booking(row)
+
+
+
+    def list_bookings(self, user_name: str | None = None) -> list[Booking]:
+        with get_connection(self.db_path) as conn:
+            if user_name:
+                rows = conn.execute(
+                    "SELECT * FROM bookings WHERE LOWER(user_name) = LOWER(?) ORDER BY created_at DESC",
+                    (user_name.strip(),),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM bookings ORDER BY created_at DESC"
+                ).fetchall()
+        return [self._row_to_booking(r) for r in rows]
+
+        
+    @staticmethod
+    def _row_to_flight(row: object) -> FlightOffer:
+        r = dict(row) 
+        return FlightOffer(
+            id=r["id"],
+            origin=r["origin"],
+            destination=r["destination"],
+            departure_date=r["departure_date"],
+            departure_time=r["departure_time"],
+            arrival_time=r["arrival_time"],
+            duration_minutes=int(r["duration_minutes"]),
+            airline=r["airline"],
+            flight_number=r["flight_number"],
+            price=float(r["price"]),
+            seats_available=int(r["seats_available"]),
+        )
+
     
     
