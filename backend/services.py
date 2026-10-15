@@ -1,94 +1,102 @@
-from __future__ import annotations
-import json 
-import uuid
+"""Business logic for search, booking, cancel, and status.
 
-from datetime import date , datetime
+Phase 2 (MCP) will expose these methods as tools.
+The agent should call TravelService — not SQLite directly.
+"""
+
+from __future__ import annotations
+
+import json
+import uuid
+from datetime import date, datetime, timezone
 from pathlib import Path
 
-from .database import get_connection , init_db , seed_if_empty
+from .database import get_connection, init_db, seed_if_empty
+from .models import Booking, FlightOffer, HotelOffer
 
 
-from .models import FlightOffer , HotelOffer , Booking
-
-
-
-
-
-
-def _parse_date(value : str) -> date :
+def _parse_date(value: str) -> date:
+    """Parse YYYY-MM-DD or raise a clear ValueError."""
     try:
         return date.fromisoformat(value)
-    except ValueError as e:
-        raise ValueError(f"Invalid date format: {value}") from e
+    except ValueError as exc:
+        raise ValueError(f"Invalid date '{value}', expected YYYY-MM-DD") from exc
 
 
-
-def _night_between(check_in : str , check_out : str) -> int:
+def _nights_between(check_in: str, check_out: str) -> int:
+    """Return number of nights between two dates (check_out must be later)."""
     start = _parse_date(check_in)
     end = _parse_date(check_out)
-
     nights = (end - start).days
     if nights < 1:
-        raise ValueError("Check-out date must be after check-in date")
+        raise ValueError("check_out must be after check_in (at least 1 night)")
     return nights
 
 
-
-
-
 class TravelService:
-    def __init__(self . db_path : Path |None = None):
+    """Mock travel backend: catalog search + real SQLite bookings."""
+
+    def __init__(self, db_path: Path | None = None) -> None:
+        """Open/create DB, ensure schema exists, seed catalog if empty."""
         self.db_path = db_path
         with get_connection(self.db_path) as conn:
             init_db(conn)
             seed_if_empty(conn)
 
 
-
-
-    def searech_flights(self , origin : str | None = None , destination : str |None = None , departure_date : str |None = None , max_price : float |None = None , only_available : bool = True  ) -> list[Flight]:
-        clauses = list[str] = []
-        params = list[object] = []
-
+    def search_flights(
+        self,
+        origin: str | None = None,
+        destination: str | None = None,
+        departure_date: str | None = None,
+        max_price: float | None = None,
+        only_available: bool = True,
+    ) -> list[FlightOffer]:
+        """Search flight catalog. Results are sorted by price ascending."""
+        clauses: list[str] = []
+        params: list[object] = []
 
         if origin:
             clauses.append("LOWER(origin) = LOWER(?)")
             params.append(origin.strip())
-
         if destination:
             clauses.append("LOWER(destination) = LOWER(?)")
             params.append(destination.strip())
-
         if departure_date:
+            _parse_date(departure_date)
             clauses.append("departure_date = ?")
             params.append(departure_date)
-
         if max_price is not None:
             clauses.append("price <= ?")
             params.append(max_price)
-
         if only_available:
             clauses.append("seats_available > 0")
 
-
-        where = f"WHERE {' AND '.join(clauses)}" if clauses else "
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         sql = f"SELECT * FROM flights {where} ORDER BY price ASC"
+
         with get_connection(self.db_path) as conn:
-            rows= conn.execute(sql , params).fetchall()
-        return [self._row_to_flight(row) for row in rows]
+            rows = conn.execute(sql, params).fetchall()
+        return [self._row_to_flight(r) for r in rows]
 
+    def search_hotels(
+        self,
+        city: str,
+        check_in: str,
+        check_out: str,
+        rooms: int = 1,
+        max_price_per_night: float | None = None,
+        min_stars: int | None = None,
+        only_available: bool = True,
+    ) -> list[HotelOffer]:
+        """Search hotels and attach stay dates/rooms to each offer."""
+        if rooms < 1:
+            raise ValueError("rooms must be >= 1")
+        nights = _nights_between(check_in, check_out)
 
+        clauses: list[str] = ["LOWER(city) = LOWER(?)"]
+        params: list[object] = [city.strip()]
 
-    def search_hotels(self , city : str , check_in  :str , check_out : str , rooms : int = 1 , max_price_per_night : float | None =None , min_stars : int |None = None , only_available : bool = True  ) -> list[HotelOffer]:
-
-        if rooms < 1 :
-            raise ValueError("Rooms must be at least 1")
-        nights = _night_between(check_in , check_out)
-        clauses = list[str] = []
-        params = list[object] = []
-        if city:
-            clauses.append("LOWER(city) = LOWER(?)")
-            params.append(city.strip())
         if max_price_per_night is not None:
             clauses.append("price_per_night <= ?")
             params.append(max_price_per_night)
@@ -96,36 +104,36 @@ class TravelService:
             clauses.append("stars >= ?")
             params.append(min_stars)
         if only_available:
-            clauses.append("rooms_available > 0")
+            clauses.append("rooms_available >= ?")
             params.append(rooms)
-        where = f"WHERE {' AND '.join(clauses)}" if clauses else "
+
+        where = "WHERE " + " AND ".join(clauses)
         sql = f"SELECT * FROM hotels {where} ORDER BY price_per_night ASC"
+
         with get_connection(self.db_path) as conn:
-            rows= conn.execute(sql , params).fetchall()
+            rows = conn.execute(sql, params).fetchall()
 
-
-        offers = list[HotelOffer] = []
-        for row in rows : 
+        offers: list[HotelOffer] = []
+        for row in rows:
             price_per_night = float(row["price_per_night"])
-            offers.append(HotelOffer(
-                id = row["id"],
-                name = row["name"],
-                city = row["city"],
-                stars = int(row["stars"]),
-                check_in = check_in,
-                check_out = check_out , 
-                nights = nights ,
-                rooms = rooms ,
-                price_per_night = price_per_night,
-                total_price = price_per_night * nights * rooms,
-                rooms_available = int(row["rooms_available"]),
-
-            ))
-
+            offers.append(
+                HotelOffer(
+                    id=row["id"],
+                    name=row["name"],
+                    city=row["city"],
+                    stars=int(row["stars"]),
+                    check_in=check_in,
+                    check_out=check_out,
+                    nights=nights,
+                    rooms=rooms,
+                    price_per_night=price_per_night,
+                    total_price=price_per_night * nights * rooms,
+                    rooms_available=int(row["rooms_available"]),
+                )
+            )
         return offers
 
-
-
+    
 
     def create_booking(
         self,
@@ -137,50 +145,61 @@ class TravelService:
         check_out: str | None = None,
         rooms: int = 1,
     ) -> Booking:
+        """Create a real booking and decrease inventory.
 
+        Hotel bookings require check_in and check_out.
+        """
         booking_type = booking_type.lower().strip()
-        if booking_type not in ["flight" , "hotel"] :
-            raise ValueError(f"Invalid booking type: {booking_type}")
+        if booking_type not in ("flight", "hotel"):
+            raise ValueError("booking_type must be 'flight' or 'hotel'")
         if not user_name.strip():
-            raise ValueError("User name is required")
-
+            raise ValueError("user_name is required")
 
         with get_connection(self.db_path) as conn:
             if booking_type == "flight":
-                row = conn.execute("SELECT * FROM flights WHERE id = ?" , (item_id ,)).fetchone()
-                if row is None : 
+                row = conn.execute(
+                    "SELECT * FROM flights WHERE id = ?", (item_id,)
+                ).fetchone()
+                if row is None:
                     raise ValueError(f"Flight not found: {item_id}")
-                if row["seats_available"] <= 0:
-                    raise ValueError(f"flight {item_id} is sold out!")
+                if row["seats_available"] < 1:
+                    raise ValueError(f"Flight {item_id} is sold out")
 
                 total_price = float(row["price"])
-                                details = {
-                        "origin": row["origin"],
-                        "destination": row["destination"],
-                        "departure_date": row["departure_date"],
-                        "departure_time": row["departure_time"],
-                        "arrival_time": row["arrival_time"],
-                        "duration_minutes": int(row["duration_minutes"]),
-                        "airline": row["airline"],
-                        "flight_number": row["flight_number"],
-                        "seats": 1,
-                    }
-                    conn.execute("UPDATE flights SET seats_available = seats_available - 1 WHERE id = ?" , (item_id ,))
-
-
-            else : 
+                details = {
+                    "origin": row["origin"],
+                    "destination": row["destination"],
+                    "departure_date": row["departure_date"],
+                    "departure_time": row["departure_time"],
+                    "arrival_time": row["arrival_time"],
+                    "duration_minutes": int(row["duration_minutes"]),
+                    "airline": row["airline"],
+                    "flight_number": row["flight_number"],
+                    "seats": 1,
+                }
+                conn.execute(
+                    "UPDATE flights SET seats_available = seats_available - 1 WHERE id = ?",
+                    (item_id,),
+                )
+            else:
                 if not check_in or not check_out:
-                    raise ValueError("Check-in and check-out dates are required for hotel bookings")
+                    raise ValueError("hotel booking requires check_in and check_out")
                 if rooms < 1:
-                    raise ValueError("Rooms must be at least 1")
-                nights = _night_between(check_in , check_out)
-                row = conn.execute("SELECT * FROM hotels WHERE id = ?" , (item_id ,)).fetchone()
-                if row is None :
-                    raise ValueError(f"Hotel not found: {item_id}")
+                    raise ValueError("rooms must be >= 1")
+                nights = _nights_between(check_in, check_out)
 
+                row = conn.execute(
+                    "SELECT * FROM hotels WHERE id = ?", (item_id,)
+                ).fetchone()
+                if row is None:
+                    raise ValueError(f"Hotel not found: {item_id}")
                 if row["rooms_available"] < rooms:
-                    raise ValueError(f"Hotel {item_id} has only {row['rooms_available']} rooms available")
-                total_price = float(row["price_per_night"]) * nights * rooms
+                    raise ValueError(
+                        f"Hotel {item_id} has only {row['rooms_available']} room(s) left"
+                    )
+
+                price_per_night = float(row["price_per_night"])
+                total_price = price_per_night * nights * rooms
                 details = {
                     "hotel_name": row["name"],
                     "city": row["city"],
@@ -191,20 +210,19 @@ class TravelService:
                     "rooms": rooms,
                     "price_per_night": price_per_night,
                 }
-
-                conn.execute("UPDATE hotels SET rooms_available = rooms_available - ? WHERE id = ?" , (rooms , item_id))
-
-
+                conn.execute(
+                    "UPDATE hotels SET rooms_available = rooms_available - ? WHERE id = ?",
+                    (rooms, item_id),
+                )
 
             booking_id = f"BK-{uuid.uuid4().hex[:8].upper()}"
             created_at = datetime.now(timezone.utc).isoformat()
-
 
             conn.execute(
                 """
                 INSERT INTO bookings
                 (id, booking_type, item_id, user_name, status,
-                    total_price, details_json, created_at)
+                 total_price, details_json, created_at)
                 VALUES (?, ?, ?, ?, 'confirmed', ?, ?, ?)
                 """,
                 (
@@ -220,52 +238,48 @@ class TravelService:
             conn.commit()
 
             return Booking(
-                id = booking_id,
-                booking_type = booking_type,
-                item_id = item_id,
-                user_name = user_name.strip(),
-                status = "confirmed",
-                total_price = total_price,
-                created_at = created_at,
-                details = details,
-                
+                id=booking_id,
+                booking_type=booking_type,  
+                item_id=item_id,
+                user_name=user_name.strip(),
+                status="confirmed",
+                total_price=total_price,
+                created_at=created_at,
+                details=details,
             )
 
-    @staticmethod
-    def _row_to_booking(row: object) -> Booking:
-        r = dict(row)  # type: ignore[arg-type]
-        return Booking(
-            id=r["id"],
-            booking_type=r["booking_type"],
-            item_id=r["item_id"],
-            user_name=r["user_name"],
-            status=r["status"],
-            total_price=float(r["total_price"]),
-            created_at=r["created_at"],
-            details=json.loads(r["details_json"]),
-        )
-
-
-
-    def cancel_booking(self , booking_id : str) -> Booking:
+    def cancel_booking(self, booking_id: str) -> Booking:
+        """Cancel a confirmed booking and restore catalog inventory."""
         with get_connection(self.db_path) as conn:
-            row = conn.execute("SELECT * FROM bookings WHERE id = ?" , (booking_id ,)).fetchone()
-            if row is None :
+            row = conn.execute(
+                "SELECT * FROM bookings WHERE id = ?", (booking_id,)
+            ).fetchone()
+            if row is None:
                 raise ValueError(f"Booking not found: {booking_id}")
-            if row["status"] != "confirmed":
-                raise ValueError(f"Booking {booking_id} is not confirmed")
-
+            if row["status"] == "cancelled":
+                raise ValueError(f"Booking {booking_id} is already cancelled")
 
             details = json.loads(row["details_json"])
-            if row["booking_type"] == "flight":
-                seats = int(details.get("seats" , 1))
-                conn.execute("UPDATE flights SET seats_available = seats_available + ? WHERE id = ?" , (seats , row["item_id"]) , )
-            else : 
-                rooms = int(details.get("rooms" , 1))
-                conn.execute("UPDATE hotels SET rooms_available = rooms_available + ? WHERE id = ?" , (rooms , row["item_id"]) , )
 
-            conn.execute("UPDATE bookings SET status = 'cancelled' WHERE id = ?" , (booking_id ,))
+            if row["booking_type"] == "flight":
+                seats = int(details.get("seats", 1))
+                conn.execute(
+                    "UPDATE flights SET seats_available = seats_available + ? WHERE id = ?",
+                    (seats, row["item_id"]),
+                )
+            else:
+                rooms = int(details.get("rooms", 1))
+                conn.execute(
+                    "UPDATE hotels SET rooms_available = rooms_available + ? WHERE id = ?",
+                    (rooms, row["item_id"]),
+                )
+
+            conn.execute(
+                "UPDATE bookings SET status = 'cancelled' WHERE id = ?",
+                (booking_id,),
+            )
             conn.commit()
+
             return Booking(
                 id=row["id"],
                 booking_type=row["booking_type"],
@@ -277,20 +291,23 @@ class TravelService:
                 details=details,
             )
 
-    def get_booking(self , booking_id : str) -> Booking:
+    def get_booking(self, booking_id: str) -> Booking:
+        """Fetch one booking by id, or raise if missing."""
         with get_connection(self.db_path) as conn:
-            row = conn.execute("SELECT * FROM bookings WHERE id = ?" , (booking_id ,)).fetchone()
-            if row is None :
-                raise ValueError(f"Booking not found: {booking_id}")
-            return self._row_to_booking(row)
-
-
+            row = conn.execute(
+                "SELECT * FROM bookings WHERE id = ?", (booking_id,)
+            ).fetchone()
+        if row is None:
+            raise ValueError(f"Booking not found: {booking_id}")
+        return self._row_to_booking(row)
 
     def list_bookings(self, user_name: str | None = None) -> list[Booking]:
+        """List bookings, optionally filtered by user_name."""
         with get_connection(self.db_path) as conn:
             if user_name:
                 rows = conn.execute(
-                    "SELECT * FROM bookings WHERE LOWER(user_name) = LOWER(?) ORDER BY created_at DESC",
+                    "SELECT * FROM bookings WHERE LOWER(user_name) = LOWER(?) "
+                    "ORDER BY created_at DESC",
                     (user_name.strip(),),
                 ).fetchall()
             else:
@@ -299,9 +316,9 @@ class TravelService:
                 ).fetchall()
         return [self._row_to_booking(r) for r in rows]
 
-        
     @staticmethod
     def _row_to_flight(row: object) -> FlightOffer:
+        """Convert a flights table row into FlightOffer."""
         r = dict(row) 
         return FlightOffer(
             id=r["id"],
@@ -317,5 +334,17 @@ class TravelService:
             seats_available=int(r["seats_available"]),
         )
 
-    
-    
+    @staticmethod
+    def _row_to_booking(row: object) -> Booking:
+        """Convert a bookings table row into Booking (details from JSON)."""
+        r = dict(row)  
+        return Booking(
+            id=r["id"],
+            booking_type=r["booking_type"],
+            item_id=r["item_id"],
+            user_name=r["user_name"],
+            status=r["status"],
+            total_price=float(r["total_price"]),
+            created_at=r["created_at"],
+            details=json.loads(r["details_json"]),
+        )
