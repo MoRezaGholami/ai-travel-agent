@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from mcp.server.mcpserver import MCPServer
+from mcp.server.fastmcp import FastMCP
 
 from mcp_server.common import ok, service
 
 
-def register(mcp: MCPServer) -> None:
+def register(mcp: FastMCP) -> None:
     """Register booking-related tools on the MCP server."""
 
     @mcp.tool()

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from mcp.server.mcpserver import MCPServer
+from mcp.server.fastmcp import FastMCP
 
 from mcp_server.common import ok
 
 
-def register(mcp: MCPServer) -> None:
+def register(mcp: FastMCP) -> None:
     """Register knowledge/RAG tools on the MCP server."""
 
     @mcp.tool()

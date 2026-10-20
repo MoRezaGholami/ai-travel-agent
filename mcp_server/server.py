@@ -10,24 +10,23 @@ Run:
 
 from __future__ import annotations
 
-from mcp.server.mcpserver import MCPServer
+from mcp.server.fastmcp import FastMCP
 
 from mcp_server.tools import register_all
 
-mcp = MCPServer(
+mcp = FastMCP(
     "ai-travel-assistant",
     instructions=(
-        "Mock travel backend tools. Use search_* to find offers, then "
-        "create_booking for real reservations. Always confirm with the user "
-        "before create_booking or cancel_booking. Hotel booking needs "
-        "check_in and check_out (YYYY-MM-DD)."
+        "Mock travel backend tools. Use search_* for offers, then create_booking "
+        "only after user confirmation. Use cancel_booking to cancel. "
+        "Hotel booking requires check_in and check_out as YYYY-MM-DD."
     ),
 )
 
 register_all(mcp)
 
 
-def create_server() -> MCPServer:
+def create_server() -> FastMCP:
     """Return the configured MCP server instance."""
     return mcp
 
