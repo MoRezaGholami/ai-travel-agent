@@ -101,17 +101,13 @@ def init_db(conn: sqlite3.Connection) -> None:
 
 
 def seed_if_empty(conn: sqlite3.Connection) -> None:
-    """Insert demo flights/hotels only when those tables are empty.
+    """Ensure full flight/hotel catalog exists (INSERT OR IGNORE).
 
-    Bookings are intentionally left empty so each demo creates real rows.
+    Safe on existing DBs: adds new ids without wiping bookings or inventory.
     """
-    flight_count = conn.execute("SELECT COUNT(*) FROM flights").fetchone()[0]
-    hotel_count = conn.execute("SELECT COUNT(*) FROM hotels").fetchone()[0]
-
-    if flight_count == 0:
-        conn.executemany(
+    conn.executemany(
             """
-            INSERT INTO flights (
+            INSERT OR IGNORE INTO flights (
                 id, origin, destination, departure_date,
                 departure_time, arrival_time, duration_minutes,
                 airline, flight_number, price, seats_available
@@ -168,13 +164,63 @@ def seed_if_empty(conn: sqlite3.Connection) -> None:
                 ("FL048", "Singapore", "Tehran", "2026-12-10", "15:10", "21:20", 370, "Singapore Airlines", "SQ492", 760.0, 9),
                 ("FL049", "Tehran", "Kuwait City", "2026-12-04", "10:20", "12:15", 115, "Kuwait Airways", "KU516", 240.0, 18),
                 ("FL050", "Kuwait City", "Tehran", "2026-12-11", "16:40", "18:35", 115, "Kuwait Airways", "KU517", 225.0, 7),
+                ("FL051", "Tehran", "Istanbul", "2026-11-11", "06:00", "09:15", 195, "Turkish Airlines", "TK875", 305.0, 9),
+                ("FL052", "Tehran", "Istanbul", "2026-11-11", "19:40", "22:55", 195, "Pegasus", "PC515", 199.0, 14),
+                ("FL053", "Tehran", "Istanbul", "2026-11-13", "10:20", "13:35", 195, "Mahan Air", "W5106", 265.0, 7),
+                ("FL054", "Istanbul", "Tehran", "2026-11-18", "07:15", "10:30", 195, "Turkish Airlines", "TK876", 300.0, 11),
+                ("FL055", "Istanbul", "Tehran", "2026-11-19", "23:50", "03:05", 195, "Pegasus", "PC516", 185.0, 16),
+                ("FL056", "Tehran", "Dubai", "2026-11-12", "08:00", "10:30", 150, "Emirates", "EK980", 430.0, 8),
+                ("FL057", "Tehran", "Dubai", "2026-11-13", "22:10", "00:40", 150, "Flydubai", "FZ194", 275.0, 20),
+                ("FL058", "Dubai", "Tehran", "2026-11-19", "15:20", "17:50", 150, "Emirates", "EK981", 410.0, 6),
+                ("FL059", "Dubai", "Tehran", "2026-11-20", "01:00", "03:30", 150, "Flydubai", "FZ195", 260.0, 12),
+                ("FL060", "Tehran", "Doha", "2026-11-14", "11:30", "14:00", 150, "Qatar Airways", "QR501", 375.0, 10),
+                ("FL061", "Doha", "Tehran", "2026-11-21", "20:00", "22:30", 150, "Qatar Airways", "QR500", 355.0, 9),
+                ("FL062", "Tehran", "Antalya", "2026-11-15", "05:40", "08:50", 190, "Pegasus", "PC1800", 245.0, 18),
+                ("FL063", "Antalya", "Tehran", "2026-11-22", "21:10", "00:20", 190, "Pegasus", "PC1801", 235.0, 15),
+                ("FL064", "Tehran", "Izmir", "2026-11-16", "09:00", "12:00", 180, "Turkish Airlines", "TK890", 255.0, 11),
+                ("FL065", "Izmir", "Tehran", "2026-11-23", "16:30", "19:30", 180, "Turkish Airlines", "TK891", 250.0, 8),
+                ("FL066", "Tehran", "Cairo", "2026-11-17", "04:20", "07:40", 200, "EgyptAir", "MS709", 360.0, 7),
+                ("FL067", "Cairo", "Tehran", "2026-11-24", "14:00", "17:20", 200, "EgyptAir", "MS710", 350.0, 10),
+                ("FL068", "Tehran", "Beirut", "2026-11-18", "12:45", "14:45", 120, "Middle East Airlines", "ME365", 290.0, 13),
+                ("FL069", "Beirut", "Tehran", "2026-11-25", "18:00", "20:00", 120, "Middle East Airlines", "ME366", 285.0, 9),
+                ("FL070", "Tehran", "Muscat", "2026-11-19", "07:10", "09:50", 160, "Oman Air", "WY234", 320.0, 6),
+                ("FL071", "Muscat", "Tehran", "2026-11-26", "13:20", "16:00", 160, "Oman Air", "WY235", 310.0, 8),
+                ("FL072", "Tehran", "Riyadh", "2026-11-20", "06:30", "08:40", 130, "Saudia", "SV501", 280.0, 14),
+                ("FL073", "Riyadh", "Tehran", "2026-11-27", "17:50", "20:00", 130, "Saudia", "SV502", 270.0, 11),
+                ("FL074", "Tehran", "Jeddah", "2026-11-21", "03:15", "06:00", 165, "Saudia", "SV510", 300.0, 12),
+                ("FL075", "Jeddah", "Tehran", "2026-11-28", "22:40", "01:25", 165, "Saudia", "SV511", 295.0, 7),
+                ("FL076", "Tehran", "Barcelona", "2026-11-22", "05:00", "10:30", 330, "Vueling", "VY7890", 520.0, 9),
+                ("FL077", "Barcelona", "Tehran", "2026-11-29", "12:00", "21:00", 360, "Turkish Airlines", "TK1854", 505.0, 5),
+                ("FL078", "Tehran", "Madrid", "2026-11-23", "04:40", "10:20", 340, "Iberia", "IB3456", 540.0, 8),
+                ("FL079", "Madrid", "Tehran", "2026-11-30", "14:10", "23:00", 350, "Iberia", "IB3457", 530.0, 6),
+                ("FL080", "Tehran", "Amsterdam", "2026-11-24", "06:10", "10:40", 270, "KLM", "KL433", 580.0, 10),
+                ("FL081", "Amsterdam", "Tehran", "2026-12-01", "15:20", "23:30", 310, "KLM", "KL434", 565.0, 7),
+                ("FL082", "Tehran", "Berlin", "2026-11-25", "07:00", "11:20", 260, "Lufthansa", "LH602", 500.0, 11),
+                ("FL083", "Berlin", "Tehran", "2026-12-02", "13:40", "22:00", 320, "Lufthansa", "LH603", 490.0, 8),
+                ("FL084", "Tehran", "Prague", "2026-11-26", "08:20", "12:00", 220, "Czech Airlines", "OK780", 420.0, 9),
+                ("FL085", "Prague", "Tehran", "2026-12-03", "16:10", "23:40", 270, "Czech Airlines", "OK781", 410.0, 6),
+                ("FL086", "Tehran", "Budapest", "2026-11-27", "05:50", "09:40", 230, "Wizz Air", "W62401", 380.0, 15),
+                ("FL087", "Budapest", "Tehran", "2026-12-04", "18:30", "02:00", 270, "Wizz Air", "W62402", 370.0, 12),
+                ("FL088", "Tehran", "Milan", "2026-11-28", "06:40", "10:50", 250, "ITA Airways", "AZ720", 460.0, 8),
+                ("FL089", "Milan", "Tehran", "2026-12-05", "14:50", "23:00", 310, "ITA Airways", "AZ721", 450.0, 5),
+                ("FL090", "Tehran", "Lisbon", "2026-11-29", "03:30", "10:00", 390, "TAP Air Portugal", "TP790", 610.0, 7),
+                ("FL091", "Lisbon", "Tehran", "2026-12-06", "12:20", "22:40", 400, "TAP Air Portugal", "TP791", 600.0, 4),
+                ("FL092", "Tehran", "Seoul", "2026-11-30", "01:00", "14:30", 510, "Korean Air", "KE958", 850.0, 6),
+                ("FL093", "Seoul", "Tehran", "2026-12-07", "16:40", "22:10", 450, "Korean Air", "KE959", 830.0, 5),
+                ("FL094", "Tehran", "Hong Kong", "2026-12-01", "02:40", "14:20", 460, "Cathay Pacific", "CX601", 800.0, 7),
+                ("FL095", "Hong Kong", "Tehran", "2026-12-08", "15:00", "21:30", 450, "Cathay Pacific", "CX602", 785.0, 8),
+                ("FL096", "Tehran", "Shanghai", "2026-12-02", "01:20", "12:50", 450, "China Eastern", "MU708", 740.0, 9),
+                ("FL097", "Shanghai", "Tehran", "2026-12-09", "14:00", "20:30", 450, "China Eastern", "MU709", 725.0, 6),
+                ("FL098", "Tehran", "Isfahan", "2026-12-03", "09:00", "10:10", 70, "Iran Air", "IR340", 95.0, 22),
+                ("FL099", "Isfahan", "Tehran", "2026-12-10", "18:00", "19:10", 70, "Iran Air", "IR341", 90.0, 20),
+                ("FL100", "Tehran", "Shiraz", "2026-12-04", "07:30", "09:00", 90, "Mahan Air", "W5100", 110.0, 18),
+
             ],
         )
 
-    if hotel_count == 0:
-        conn.executemany(
+    conn.executemany(
             """
-            INSERT INTO hotels
+            INSERT OR IGNORE INTO hotels
             (id, city, name, stars, price_per_night, rooms_available)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
@@ -229,6 +275,57 @@ def seed_if_empty(conn: sqlite3.Connection) -> None:
                 ("HT048", "Yerevan", "Republic Square Inn", 3, 55.0, 10),
                 ("HT049", "Vienna", "Imperial Vienna Palace", 5, 290.0, 2),
                 ("HT050", "Vienna", "Danube Comfort Hotel", 4, 135.0, 8),
+                ("HT051", "Istanbul", "Taksim Square Hotel", 4, 88.0, 9),
+                ("HT052", "Istanbul", "Balat Riverside Inn", 3, 52.0, 11),
+                ("HT053", "Istanbul", "Uskudar Sea Lodge", 3, 60.0, 8),
+                ("HT054", "Istanbul", "Nisantasi Design Hotel", 5, 200.0, 3),
+                ("HT055", "Istanbul", "Aksaray Transit Stay", 2, 32.0, 16),
+                ("HT056", "Dubai", "JBR Beach Suites", 4, 140.0, 7),
+                ("HT057", "Dubai", "Business Bay Tower Hotel", 4, 115.0, 10),
+                ("HT058", "Dubai", "Al Fahidi Heritage Inn", 3, 68.0, 12),
+                ("HT059", "Dubai", "World Islands Resort", 5, 360.0, 2),
+                ("HT060", "Dubai", "Deira Metro Budget", 2, 40.0, 18),
+                ("HT061", "Tehran", "Valiasr Boutique Hotel", 4, 92.0, 8),
+                ("HT062", "Tehran", "Tajrish Hill Suites", 4, 110.0, 5),
+                ("HT063", "Tehran", "Enghelab City Inn", 3, 45.0, 14),
+                ("HT064", "Tehran", "Mehrabad Transit Lodge", 2, 28.0, 20),
+                ("HT065", "Antalya", "Lara Beach Resort", 5, 210.0, 6),
+                ("HT066", "Antalya", "Kaleici Old Town Hotel", 4, 95.0, 9),
+                ("HT067", "Antalya", "Konyaalti Budget Stay", 2, 40.0, 15),
+                ("HT068", "Izmir", "Kordon Seaside Hotel", 4, 100.0, 7),
+                ("HT069", "Izmir", "Alsancak City Inn", 3, 58.0, 11),
+                ("HT070", "Cairo", "Nile View Palace", 5, 175.0, 4),
+                ("HT071", "Cairo", "Zamalek Boutique", 4, 95.0, 8),
+                ("HT072", "Cairo", "Downtown Cairo Inn", 3, 50.0, 13),
+                ("HT073", "Beirut", "Corniche Grand Hotel", 5, 190.0, 3),
+                ("HT074", "Beirut", "Hamra Street Suites", 4, 105.0, 6),
+                ("HT075", "Muscat", "Muttrah Harbour Hotel", 4, 130.0, 5),
+                ("HT076", "Muscat", "Qurum Beach Inn", 3, 70.0, 10),
+                ("HT077", "Riyadh", "Kingdom Tower Suites", 5, 240.0, 4),
+                ("HT078", "Riyadh", "Olaya Business Hotel", 4, 120.0, 8),
+                ("HT079", "Jeddah", "Red Sea Corniche Hotel", 5, 200.0, 3),
+                ("HT080", "Jeddah", "Balad Heritage Inn", 3, 65.0, 12),
+                ("HT081", "Barcelona", "Gothic Quarter Hotel", 4, 150.0, 6),
+                ("HT082", "Barcelona", "Sagrada Vista Suites", 5, 260.0, 3),
+                ("HT083", "Barcelona", "El Raval Budget Stay", 2, 55.0, 14),
+                ("HT084", "Madrid", "Gran Via Grand Hotel", 5, 240.0, 4),
+                ("HT085", "Madrid", "Retiro Park Inn", 4, 130.0, 7),
+                ("HT086", "Amsterdam", "Canal House Boutique", 4, 175.0, 5),
+                ("HT087", "Amsterdam", "Museumplein Suites", 3, 110.0, 9),
+                ("HT088", "Berlin", "Mitte Design Hotel", 4, 140.0, 8),
+                ("HT089", "Berlin", "Kreuzberg Urban Inn", 3, 85.0, 12),
+                ("HT090", "Prague", "Charles Bridge Hotel", 5, 195.0, 3),
+                ("HT091", "Prague", "Old Town Square Inn", 4, 115.0, 7),
+                ("HT092", "Budapest", "Danube Bank Suites", 4, 120.0, 6),
+                ("HT093", "Budapest", "Ruin Bar District Inn", 3, 70.0, 11),
+                ("HT094", "Milan", "Duomo Luxury Hotel", 5, 280.0, 2),
+                ("HT095", "Milan", "Navigli Boutique Stay", 4, 145.0, 5),
+                ("HT096", "Lisbon", "Alfama Hill Hotel", 4, 125.0, 6),
+                ("HT097", "Lisbon", "Belem River Inn", 3, 80.0, 10),
+                ("HT098", "Seoul", "Myeongdong Central Hotel", 4, 130.0, 8),
+                ("HT099", "Hong Kong", "Victoria Harbour Suites", 5, 290.0, 3),
+                ("HT100", "Shanghai", "Bund Heritage Hotel", 5, 220.0, 4),
+
             ],
         )
 
