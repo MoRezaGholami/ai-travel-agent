@@ -5,6 +5,9 @@ description: Create, cancel, and check bookings with mandatory user confirmation
 
 # Skill: booking-management
 
+## Owner
+Orchestrator only. Subagents must never book or cancel.
+
 ## When to use
 - User asks to book a flight/hotel, cancel a booking, or check booking status.
 
@@ -31,4 +34,4 @@ description: Create, cancel, and check bookings with mandatory user confirmation
 
 ## Errors
 - Never create/cancel without user confirmation.
-- If item_id is invalid, reuse ids from the latest search results.
+- If item_id is invalid, reuse ids from the latest specialist/search results.

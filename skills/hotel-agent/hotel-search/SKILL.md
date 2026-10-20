@@ -5,9 +5,11 @@ description: Search and filter hotels by city, stay dates, rooms, price, and sta
 
 # Skill: hotel-search
 
+## Owner
+`hotel-agent` subagent only.
+
 ## When to use
-- User wants a hotel / stay.
-- Part of trip planning that needs lodging.
+- Task asks for hotels / lodging options.
 
 ## Required inputs
 - `city` (e.g. Istanbul)
@@ -15,7 +17,7 @@ description: Search and filter hotels by city, stay dates, rooms, price, and sta
 - `rooms` default 1
 - optional: `max_price_per_night`, `min_stars`
 
-If stay dates are missing, ask (at least check-in and nights, or check-out).
+If stay dates are missing from the task, report what is needed.
 
 ## Steps
 1. Extract parameters and normalize dates to YYYY-MM-DD.
@@ -28,4 +30,5 @@ If stay dates are missing, ask (at least check-in and nights, or check-out).
 
 ## Errors
 - If not enough rooms, reduce rooms or suggest another hotel.
-- If dates are invalid (checkout before checkin), ask to fix them.
+- If dates are invalid, say so clearly.
+- Never create bookings.

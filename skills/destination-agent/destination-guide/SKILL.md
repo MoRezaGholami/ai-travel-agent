@@ -5,19 +5,21 @@ description: Recommend attractions, neighborhoods, transport, and local tips via
 
 # Skill: destination-guide
 
+## Owner
+`destination-agent` subagent only.
+
 ## When to use
-- User asks about attractions, where to stay areas, transport, etiquette, or destination tips.
-- After destination is chosen, to enrich the trip plan.
+- Task asks about attractions, neighborhoods, transport, etiquette, or destination tips.
 
 ## Required inputs
 - Topic / query
-- `city` when known: istanbul / dubai (or Persian equivalents)
+- `city` when known: istanbul / dubai
 
 ## Steps
 1. Identify topic and city.
 2. Call `search_knowledge(query, city, top_k=4)`.
 3. Answer from retrieved chunks and mention source (source/heading).
-4. Do not invent live flight/hotel prices from RAG — use search_flights / search_hotels.
+4. Do not invent live flight/hotel prices — that is not this agent's job.
 
 ## Tools
 - `search_knowledge`
