@@ -1,0 +1,13 @@
+
+mcp>=1.24,<2
+
+
+deepagents>=0.7.28,<0.8
+langchain>=1.4.6,<2
+langchain-openai>=0.3
+langchain-anthropic>=1.0
+langchain-mcp-adapters>=0.1.0
+langgraph-checkpoint-sqlite>=2.0
+python-dotenv>=1.0
+
+# RAG uses pure-Python BM25 (no torch). Rebuild: python -m rag build
