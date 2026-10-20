@@ -2,7 +2,7 @@
 
 Tools come from MCP (mcp_server).
 Conversation memory: SQLite checkpointer + thread_id.
-Specialized work: flight / hotel / destination subagents.
+Specialists: flight / hotel / destination / itinerary / booking subagents.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 from agent.mcp_tools import load_travel_mcp_tools
 from agent.prompts import ORCHESTRATOR_SYSTEM_PROMPT
 from agent.subagents import build_travel_subagents
+from agent.subagents._common import pick_tools
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CHECKPOINT_DB = PROJECT_ROOT / "data" / "checkpoints.sqlite"
@@ -52,7 +53,13 @@ def _build_model():
         model_name = model_id
         if model_id.startswith("openai:") and "/" not in model_id:
             model_name = "openai/" + model_id.split(":", 1)[1]
-        kwargs: dict = {"model": model_name, "api_key": api_key}
+        kwargs: dict = {
+            "model": model_name,
+            "api_key": api_key,
+            # Fail fast in CLI instead of silent multi-minute retries
+            "max_retries": 1,
+            "timeout": 90,
+        }
         if base_url:
             kwargs["base_url"] = base_url.rstrip("/")
         return ChatOpenAI(**kwargs)
@@ -80,26 +87,21 @@ def create_travel_orchestrator():
     from deepagents.backends import FilesystemBackend
 
     model = _build_model()
-    tools = load_travel_mcp_tools()
-    subagents = build_travel_subagents(tools)
+    all_tools = load_travel_mcp_tools()
+    subagents = build_travel_subagents(all_tools)
     backend = FilesystemBackend(root_dir=PROJECT_ROOT)
     checkpointer = _build_checkpointer()
 
-    # Booking stays on the orchestrator (with human confirmation)
-    interrupt_on = {
-        "create_booking": True,
-        "cancel_booking": True,
-    }
+    # Orchestrator keeps only light status tools; specialists own search + booking side-effects.
+    orchestrator_tools = pick_tools(all_tools, {"get_booking", "list_bookings"})
 
     agent = create_deep_agent(
         model=model,
-        tools=tools,
+        tools=orchestrator_tools,
         system_prompt=ORCHESTRATOR_SYSTEM_PROMPT,
         subagents=subagents,
-        # Orchestrator-only skills (trip planning + booking). Specialists have their own.
         skills=["/skills/orchestrator/"],
         backend=backend,
-        interrupt_on=interrupt_on,
         checkpointer=checkpointer,
         name="travel-orchestrator",
     )

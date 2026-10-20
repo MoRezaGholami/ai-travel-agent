@@ -6,9 +6,11 @@ from typing import Any
 
 from langchain_core.tools import BaseTool
 
+from agent.subagents.booking_agent import build_booking_agent
 from agent.subagents.destination_agent import build_destination_agent
 from agent.subagents.flight_agent import build_flight_agent
 from agent.subagents.hotel_agent import build_hotel_agent
+from agent.subagents.itinerary_agent import build_itinerary_agent
 
 
 def build_travel_subagents(tools: list[BaseTool]) -> list[dict[str, Any]]:
@@ -17,6 +19,8 @@ def build_travel_subagents(tools: list[BaseTool]) -> list[dict[str, Any]]:
         build_flight_agent(tools),
         build_hotel_agent(tools),
         build_destination_agent(tools),
+        build_itinerary_agent(tools),
+        build_booking_agent(tools),
     ]
 
 
