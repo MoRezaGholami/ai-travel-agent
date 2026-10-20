@@ -10,19 +10,33 @@ from __future__ import annotations
 import threading
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from agent.orchestrator import create_travel_orchestrator
-from agent.session import TurnResult, approve, chat, get_pending
+from agent.session import (
+    TurnResult,
+    approve,
+    chat,
+    get_pending,
+    get_thread_history,
+    list_threads,
+)
 from api.schemas import (
     ApproveRequest,
     ChatRequest,
     RejectRequest,
+    ThreadHistoryResponse,
+    ThreadSummary,
     TurnResponse,
 )
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 _agent: Any | None = None
 _lock = threading.Lock()
@@ -60,6 +74,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+@app.get("/")
+def chat_ui() -> FileResponse:
+    """Simple browser chat UI for the travel agent API."""
+    return FileResponse(STATIC_DIR / "index.html")
 
 
 @app.get("/health")
@@ -102,6 +124,24 @@ def post_reject(body: RejectRequest) -> TurnResponse:
     if result.status == "error" and result.error and "No pending" in result.error:
         raise HTTPException(status_code=409, detail=result.error)
     return _to_response(result)
+
+
+@app.get("/v1/threads", response_model=list[ThreadSummary])
+def get_threads() -> list[ThreadSummary]:
+    """List past conversations (from checkpointer), newest first."""
+    agent = get_agent()
+    with _lock:
+        items = list_threads(agent, limit=40)
+    return [ThreadSummary(**item) for item in items]
+
+
+@app.get("/v1/threads/{thread_id}", response_model=ThreadHistoryResponse)
+def get_thread(thread_id: str) -> ThreadHistoryResponse:
+    """Load message history so the UI can resume a past chat."""
+    agent = get_agent()
+    with _lock:
+        data = get_thread_history(agent, thread_id)
+    return ThreadHistoryResponse(**data)
 
 
 @app.get("/v1/threads/{thread_id}/pending", response_model=TurnResponse)

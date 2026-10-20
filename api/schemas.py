@@ -37,3 +37,23 @@ class ApproveRequest(BaseModel):
 class RejectRequest(BaseModel):
     thread_id: str
     reason: str | None = "User rejected the action."
+
+
+class ThreadSummary(BaseModel):
+    thread_id: str
+    title: str
+    preview: str = ""
+    message_count: int = 0
+    needs_approval: bool = False
+
+
+class ChatMessageOut(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
+class ThreadHistoryResponse(BaseModel):
+    thread_id: str
+    messages: list[ChatMessageOut] = Field(default_factory=list)
+    status: Literal["ok", "needs_approval"] = "ok"
+    pending: list[PendingActionOut] = Field(default_factory=list)

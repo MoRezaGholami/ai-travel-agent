@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -221,3 +222,106 @@ def get_pending(agent, thread_id: str) -> TurnResult:
         status="needs_approval",
         pending=actions,
     )
+
+
+def _message_text(content: object) -> str:
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict) and block.get("type") == "text":
+                parts.append(str(block.get("text") or ""))
+            elif hasattr(block, "get"):
+                parts.append(str(block.get("text") or ""))
+        return "\n".join(p for p in parts if p).strip()
+    return str(content).strip()
+
+
+def serialize_chat_messages(messages: list[Any]) -> list[dict[str, str]]:
+    """Keep user + assistant text turns for the UI (skip tool-only steps)."""
+    out: list[dict[str, str]] = []
+    for msg in messages:
+        msg_type = getattr(msg, "type", "")
+        content = _message_text(getattr(msg, "content", None))
+        tool_calls = getattr(msg, "tool_calls", None) or []
+        if msg_type == "human" and content:
+            out.append({"role": "user", "content": content})
+        elif msg_type == "ai" and content and not tool_calls:
+            out.append({"role": "assistant", "content": content})
+    return out
+
+
+def list_thread_ids(*, limit: int = 40) -> list[str]:
+    """Distinct conversation threads from the SQLite checkpointer, newest first."""
+    from agent.orchestrator import CHECKPOINT_DB
+
+    if not CHECKPOINT_DB.exists():
+        return []
+
+    with sqlite3.connect(str(CHECKPOINT_DB)) as conn:
+        rows = conn.execute(
+            """
+            SELECT thread_id
+            FROM checkpoints
+            WHERE thread_id IS NOT NULL
+              AND length(thread_id) >= 8
+              AND thread_id NOT IN ('string', 'None', 'null')
+            GROUP BY thread_id
+            ORDER BY MAX(checkpoint_id) DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    return [r[0] for r in rows]
+
+
+def list_threads(agent, *, limit: int = 40) -> list[dict[str, Any]]:
+    """Thread summaries for the chat sidebar."""
+    items: list[dict[str, Any]] = []
+    for thread_id in list_thread_ids(limit=limit):
+        try:
+            state = agent.get_state(_config(thread_id))
+        except Exception:  # noqa: BLE001
+            continue
+        values = getattr(state, "values", None) or {}
+        messages = values.get("messages") or []
+        chat_msgs = serialize_chat_messages(messages)
+        if not chat_msgs:
+            continue
+        title = next((m["content"] for m in chat_msgs if m["role"] == "user"), "Chat")
+        title = " ".join(title.split())
+        if len(title) > 48:
+            title = title[:45] + "..."
+        pending = bool(getattr(state, "interrupts", None))
+        items.append(
+            {
+                "thread_id": thread_id,
+                "title": title,
+                "preview": chat_msgs[-1]["content"][:80],
+                "message_count": len(chat_msgs),
+                "needs_approval": pending,
+            }
+        )
+    return items
+
+
+def get_thread_history(agent, thread_id: str) -> dict[str, Any]:
+    """Full UI-visible history + pending approval for one thread."""
+    state = agent.get_state(_config(thread_id))
+    values = getattr(state, "values", None) or {}
+    messages = serialize_chat_messages(values.get("messages") or [])
+    pending_raw = getattr(state, "interrupts", None) or ()
+    actions: list[PendingAction] = []
+    for intr in pending_raw:
+        actions.extend(parse_pending(intr))
+    return {
+        "thread_id": thread_id,
+        "messages": messages,
+        "status": "needs_approval" if actions else "ok",
+        "pending": [p.to_dict() for p in actions],
+    }
