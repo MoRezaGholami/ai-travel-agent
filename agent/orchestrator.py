@@ -27,16 +27,10 @@ def _build_model():
     """Build chat model from .env (supports custom gateway via LLM_BASE_URL)."""
     _load_env()
 
-    api_key = (
-        os.getenv("OPENAI_API_KEY")
-        or os.getenv("LLM_API_KEY")
-        or os.getenv("API_KEY")
-    )
-    base_url = (
-        os.getenv("LLM_BASE_URL")
-        or os.getenv("OPENAI_BASE_URL")
-        or os.getenv("OPENAI_API_BASE")
-    )
+    api_key = os.getenv("LLM_API_KEY")
+
+    base_url = os.getenv("LLM_BASE_URL")
+
     # Gateway expects ids like "openai/gpt-4o"
     model_id = os.getenv("TRAVEL_AGENT_MODEL", "openai/gpt-4o")
 

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from mcp.server.mcpserver import MCPServer
+from mcp.server.fastmcp import FastMCP
 
 from . import bookings, flights, hotels, knowledge
 
 
-def register_all(mcp: MCPServer) -> None:
+def register_all(mcp: FastMCP) -> None:
     """Attach flight, hotel, booking, and knowledge tools to the MCP server."""
     flights.register(mcp)
     hotels.register(mcp)
