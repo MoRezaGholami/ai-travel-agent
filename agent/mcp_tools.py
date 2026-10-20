@@ -82,5 +82,5 @@ async def _aload_travel_mcp_tools() -> list[BaseTool]:
 
 
 def load_travel_mcp_tools() -> list[BaseTool]:
-    """Sync helper used by orchestrator startup."""
-    return asyncio.run(_aload_travel_mcp_tools())
+    """Sync helper used by orchestrator startup (works inside FastAPI's event loop)."""
+    return _run_async(_aload_travel_mcp_tools())
