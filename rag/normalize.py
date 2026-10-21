@@ -29,6 +29,30 @@ CITY_ALIASES: dict[str, str] = {
     "dubai": "dubai",
     "دبی": "dubai",
     "دبي": "dubai",
+    "baku": "baku",
+    "باکو": "baku",
+    "doha": "doha",
+    "دوحه": "doha",
+    "ankara": "ankara",
+    "آنکارا": "ankara",
+    "انکارا": "ankara",
+    "paris": "paris",
+    "پاریس": "paris",
+    "frankfurt": "frankfurt",
+    "فرانکفورت": "frankfurt",
+    "london": "london",
+    "لندن": "london",
+    "rome": "rome",
+    "رم": "rome",
+    "roma": "rome",
+    "kuala lumpur": "kuala_lumpur",
+    "kuala_lumpur": "kuala_lumpur",
+    "kualalumpur": "kuala_lumpur",
+    "کوالالامپور": "kuala_lumpur",
+    "کوالا لامپور": "kuala_lumpur",
+    "bangkok": "bangkok",
+    "بانکوک": "bangkok",
+    "بانگکوک": "bangkok",
 }
 
 # Optional: tiny EN→FA bridge if someone queries in English against Persian KB
@@ -65,7 +89,7 @@ def normalize_text(text: str) -> str:
 
 
 def resolve_city(city: str | None) -> str | None:
-    """Map FA/EN city names to knowledge folder names (istanbul, dubai)."""
+    """Map FA/EN city names to knowledge folder names under rag/knowledge/."""
     if not city:
         return None
     key = normalize_text(city)
