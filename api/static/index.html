@@ -35,6 +35,11 @@
       </header>
 
       <main class="shell">
+        <div id="liveStatus" class="live-status" hidden>
+          <span class="pulse" aria-hidden="true"></span>
+          <span id="liveStatusText">Working…</span>
+        </div>
+
         <section id="log" class="log" aria-live="polite"></section>
 
         <aside id="approval" class="approval" hidden>
