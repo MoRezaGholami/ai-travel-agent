@@ -26,4 +26,4 @@ description: Recommend attractions, neighborhoods, transport, and local tips via
 
 ## Errors
 - If weak results, simplify the query (e.g. "attractions", "transport").
-- Knowledge is currently filled for Istanbul and Dubai only; say so honestly for other cities.
+- If the city is not in the knowledge folders, say so honestly and suggest a supported city.

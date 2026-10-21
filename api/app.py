@@ -43,6 +43,8 @@ from api.schemas import (
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 _agent: Any | None = None
+# Serialize graph runs: SQLite checkpointer is per-thread_id, but concurrent writes
+# from different HTTP requests must not interleave checkpoint commits.
 _lock = threading.Lock()
 
 
@@ -134,12 +136,14 @@ def post_chat_stream(body: ChatRequest) -> StreamingResponse:
 
 @app.post("/v1/approve", response_model=TurnResponse)
 def post_approve(body: ApproveRequest) -> TurnResponse:
-    """Approve the pending create_booking / cancel_booking for this thread."""
+    """Approve pending create_booking / cancel_booking for this thread.
+
+    Idempotent: if nothing is pending, returns status=ok (safe to retry).
+    Multiple action_requests in one interrupt are approved together (all-or-nothing).
+    """
     agent = get_agent()
     with _lock:
         result = approve(agent, body.thread_id, decision="approve")
-    if result.status == "error" and result.error and "No pending" in result.error:
-        raise HTTPException(status_code=409, detail=result.error)
     return _to_response(result)
 
 
@@ -156,7 +160,7 @@ def post_approve_stream(body: ApproveRequest) -> StreamingResponse:
 
 @app.post("/v1/reject", response_model=TurnResponse)
 def post_reject(body: RejectRequest) -> TurnResponse:
-    """Reject the pending action (no booking/cancel is executed)."""
+    """Reject the pending action (no booking/cancel is executed). Idempotent if none."""
     agent = get_agent()
     with _lock:
         result = approve(
@@ -165,8 +169,6 @@ def post_reject(body: RejectRequest) -> TurnResponse:
             decision="reject",
             reason=body.reason,
         )
-    if result.status == "error" and result.error and "No pending" in result.error:
-        raise HTTPException(status_code=409, detail=result.error)
     return _to_response(result)
 
 

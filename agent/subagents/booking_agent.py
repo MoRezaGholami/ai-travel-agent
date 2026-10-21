@@ -41,7 +41,8 @@ def build_booking_agent(tools: list[BaseTool]) -> dict[str, Any]:
             },
         ),
         "skills": ["/skills/booking-agent/"],
-        # Human-in-the-loop for sensitive side effects
+        # HITL: graph pauses before these tools run. Session applies one human
+        # decision to every action_request in that interrupt (all-or-nothing).
         "interrupt_on": {
             "create_booking": True,
             "cancel_booking": True,

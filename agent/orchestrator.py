@@ -3,6 +3,22 @@
 Tools come from MCP (mcp_server).
 Conversation memory: SQLite checkpointer + thread_id.
 Specialists: flight / hotel / destination / itinerary / booking subagents.
+
+## How RAG enters the decision path (not automatic context stuffing)
+
+This project does **not** inject BM25 hits into every orchestrator turn.
+RAG is a *specialist tool path* the orchestrator chooses via the `task` tool:
+
+  user message
+    → orchestrator LLM (routing decision in prompts + trip-planning skill)
+    → task(destination-agent | itinerary-agent)   # only when guide/itinerary is needed
+    → subagent calls MCP `search_knowledge`
+    → rag.retriever.KnowledgeRetriever (BM25 over rag/knowledge/**)
+    → chunks returned to subagent → summary back to orchestrator → user reply
+
+So “decision-making” for RAG = **when to delegate**, not a hidden retriever middleware.
+Live prices/bookings never go through RAG; only destination knowledge does.
+Orchestrator tools deliberately exclude `search_knowledge` (see pick_tools below).
 """
 
 from __future__ import annotations

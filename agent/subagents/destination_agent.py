@@ -1,4 +1,8 @@
-"""Destination guide subagent (RAG) — declarative SubAgent spec."""
+"""Destination guide subagent (RAG) — declarative SubAgent spec.
+
+Decision path: orchestrator ``task(destination-agent)`` → only tool
+``search_knowledge`` → ``rag.retriever`` BM25. Orchestrator never calls RAG itself.
+"""
 
 from __future__ import annotations
 

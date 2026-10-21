@@ -1,4 +1,30 @@
-"""Shared turn runner for CLI and FastAPI (HITL-aware)."""
+"""Shared turn runner for CLI and FastAPI (HITL-aware).
+
+## HITL / pending-approval contract
+
+Scoped by ``thread_id`` (SqliteSaver). Threads never share interrupts.
+
+1. **What pauses**
+   ``booking-agent`` sets ``interrupt_on`` for ``create_booking`` / ``cancel_booking``.
+   The graph parks with one or more ``action_requests`` until approve/reject.
+
+2. **Multiple pending actions in one pause**
+   One interrupt may list N ``action_requests`` (e.g. two tool calls).
+   Approve/reject is **all-or-nothing**: the same decision is applied to every
+   request in that interrupt (see ``_resume_value``). The API returns the full
+   ``pending`` list so the UI can show every action before the user decides.
+   Per-action mixed approve/reject is intentionally out of scope for this app
+   (booking flow is one sensitive action at a time in practice).
+
+3. **Duplicate approve/reject**
+   Idempotent: if nothing is pending, return ``status=ok`` with a clear reply
+   (not an error). Clients may safely retry.
+
+4. **Concurrent threads**
+   Checkpointer isolates state per ``thread_id``. The FastAPI layer also holds a
+   process-wide lock around graph runs so SQLite checkpoints stay consistent
+   when several threads are active.
+"""
 
 from __future__ import annotations
 
@@ -10,6 +36,8 @@ from typing import Any, Literal
 from langgraph.types import Command
 
 Status = Literal["ok", "needs_approval", "error"]
+
+_NO_PENDING_REPLY = "No pending action for this thread (already resolved or never interrupted)."
 
 
 @dataclass
@@ -86,11 +114,48 @@ def parse_pending(intr) -> list[PendingAction]:
 
 
 def _resume_value(intr, decision: dict[str, Any]) -> Any:
+    """Map one human decision onto every action_request in this interrupt."""
     value = getattr(intr, "value", intr)
     if isinstance(value, dict) and value.get("action_requests"):
         n = len(value["action_requests"])
         return {"decisions": [decision] * n}
     return decision
+
+
+def _decision_payload(
+    decision: Literal["approve", "reject"],
+    reason: str | None = None,
+) -> dict[str, Any]:
+    if decision == "approve":
+        return {"type": "approve"}
+    return {
+        "type": "reject",
+        "message": reason or "User rejected the action.",
+    }
+
+
+def _collect_pending_actions(agent, thread_id: str) -> list[PendingAction]:
+    actions: list[PendingAction] = []
+    for intr in pending_interrupts(agent, thread_id):
+        actions.extend(parse_pending(intr))
+    return actions
+
+
+def _resume_with_decision(
+    agent,
+    thread_id: str,
+    payload_decision: dict[str, Any],
+) -> tuple[str | None, bool]:
+    """Resume the current interrupt (all its action_requests get the same decision).
+
+    If the graph pauses again afterward, callers return ``needs_approval`` so the
+    human reviews the next batch — we never auto-approve newly created interrupts.
+    """
+    pending = pending_interrupts(agent, thread_id)
+    if not pending:
+        return None, False
+    resume = Command(resume=_resume_value(pending[0], payload_decision))
+    return _run_stream(agent, resume, thread_id)
 
 
 _SUBAGENT_STATUS: dict[str, str] = {
@@ -257,11 +322,8 @@ def _run_stream(agent, payload, thread_id: str) -> tuple[str | None, bool]:
 
 def iter_chat_events(agent, thread_id: str, message: str):
     """SSE-friendly events for one user chat turn."""
-    pending = pending_interrupts(agent, thread_id)
-    if pending:
-        actions: list[PendingAction] = []
-        for intr in pending:
-            actions.extend(parse_pending(intr))
+    actions = _collect_pending_actions(agent, thread_id)
+    if actions:
         yield {
             "type": "done",
             **TurnResult(
@@ -309,27 +371,21 @@ def iter_approve_events(
     decision: Literal["approve", "reject"] = "approve",
     reason: str | None = None,
 ):
-    """SSE-friendly events for approve/reject resume."""
+    """SSE-friendly events for approve/reject resume (idempotent if nothing pending)."""
     pending = pending_interrupts(agent, thread_id)
     if not pending:
         yield {
             "type": "done",
             **TurnResult(
                 thread_id=thread_id,
-                status="error",
-                error="No pending action to approve/reject for this thread_id.",
+                status="ok",
+                reply=_NO_PENDING_REPLY,
+                pending=[],
             ).to_dict(),
         }
         return
 
-    if decision == "approve":
-        payload_decision: dict[str, Any] = {"type": "approve"}
-    else:
-        payload_decision = {
-            "type": "reject",
-            "message": reason or "User rejected the action.",
-        }
-
+    payload_decision = _decision_payload(decision, reason)
     try:
         resume = Command(resume=_resume_value(pending[0], payload_decision))
         final_text: str | None = None
@@ -383,11 +439,8 @@ def _result_after_run(agent, thread_id: str, final: str | None, hit_interrupt: b
 
 def chat(agent, thread_id: str, message: str) -> TurnResult:
     """Send a user message. If an interrupt is already pending, refuse chat until approve/reject."""
-    pending = pending_interrupts(agent, thread_id)
-    if pending:
-        actions: list[PendingAction] = []
-        for intr in pending:
-            actions.extend(parse_pending(intr))
+    actions = _collect_pending_actions(agent, thread_id)
+    if actions:
         return TurnResult(
             thread_id=thread_id,
             status="needs_approval",
@@ -417,26 +470,23 @@ def approve(
     decision: Literal["approve", "reject"] = "approve",
     reason: str | None = None,
 ) -> TurnResult:
-    """Resume a pending interrupt with approve or reject."""
-    pending = pending_interrupts(agent, thread_id)
-    if not pending:
+    """Resume a pending interrupt with approve or reject.
+
+    Idempotent when nothing is pending. Multiple ``action_requests`` in the same
+    interrupt all receive this decision (all-or-nothing).
+    """
+    if not pending_interrupts(agent, thread_id):
         return TurnResult(
             thread_id=thread_id,
-            status="error",
-            error="No pending action to approve/reject for this thread_id.",
+            status="ok",
+            reply=_NO_PENDING_REPLY,
+            pending=[],
         )
 
-    if decision == "approve":
-        payload_decision: dict[str, Any] = {"type": "approve"}
-    else:
-        payload_decision = {
-            "type": "reject",
-            "message": reason or "User rejected the action.",
-        }
-
     try:
-        resume = Command(resume=_resume_value(pending[0], payload_decision))
-        final, hit = _run_stream(agent, resume, thread_id)
+        final, hit = _resume_with_decision(
+            agent, thread_id, _decision_payload(decision, reason)
+        )
         return _result_after_run(agent, thread_id, final, hit)
     except Exception as exc:  # noqa: BLE001
         return TurnResult(
@@ -447,12 +497,9 @@ def approve(
 
 
 def get_pending(agent, thread_id: str) -> TurnResult:
-    pending = pending_interrupts(agent, thread_id)
-    if not pending:
+    actions = _collect_pending_actions(agent, thread_id)
+    if not actions:
         return TurnResult(thread_id=thread_id, status="ok", reply=None, pending=[])
-    actions: list[PendingAction] = []
-    for intr in pending:
-        actions.extend(parse_pending(intr))
     return TurnResult(
         thread_id=thread_id,
         status="needs_approval",
