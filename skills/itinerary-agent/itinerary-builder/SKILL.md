@@ -12,7 +12,7 @@ description: Build a realistic day-by-day itinerary using search_knowledge for a
 - User/orchestrator wants a multi-day plan (e.g. "3 days in Istanbul").
 
 ## Required inputs
-- `city` (istanbul / dubai)
+- `city` (istanbul, dubai, tbilisi, berlin, barcelona, vienna, amsterdam, …)
 - number of days (default 3 if missing)
 - optional interests (history, food, nightlife, budget)
 

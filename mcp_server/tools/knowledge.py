@@ -18,7 +18,8 @@ def register(mcp: FastMCP) -> None:
     ) -> str:
         """Search the Persian travel knowledge base (جاذبه‌ها، محله‌ها، حمل‌ونقل، نکات).
 
-        Prefer Persian queries. Optional city filter: استانبول/دبی or istanbul/dubai.
+        Prefer Persian queries. Optional city filter by folder name or FA/EN alias
+        (e.g. istanbul/استانبول, tbilisi/تفلیس, berlin/برلین).
         Use for static destination info — NOT live flight/hotel prices or bookings.
         """
         from rag import search_knowledge as _search

@@ -31,7 +31,7 @@ def build_destination_agent(tools: list[BaseTool]) -> dict[str, Any]:
         "description": (
             "Retrieve destination guide info via RAG: attractions, neighborhoods, "
             "transport, culture tips. Pass a query and optional city "
-            "(istanbul/dubai)."
+            "(e.g. istanbul, dubai, tbilisi, berlin, barcelona)."
         ),
         "system_prompt": SYSTEM_PROMPT,
         "tools": pick_tools(tools, {"search_knowledge"}),

@@ -13,7 +13,7 @@ description: Recommend attractions, neighborhoods, transport, and local tips via
 
 ## Required inputs
 - Topic / query
-- `city` when known: istanbul / dubai
+- `city` when known (folder or alias): istanbul, dubai, tbilisi, berlin, barcelona, vienna, amsterdam, …
 
 ## Steps
 1. Identify topic and city.
