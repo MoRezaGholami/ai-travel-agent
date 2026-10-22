@@ -6,6 +6,8 @@
   const messageEl = document.getElementById("message");
   const sendBtn = document.getElementById("sendBtn");
   const statusLine = document.getElementById("statusLine");
+  const liveStatus = document.getElementById("liveStatus");
+  const liveStatusText = document.getElementById("liveStatusText");
   const threadChip = document.getElementById("threadChip");
   const chatTitle = document.getElementById("chatTitle");
   const approval = document.getElementById("approval");
@@ -20,6 +22,8 @@
 
   let threadId = localStorage.getItem(STORAGE_KEY) || null;
   let busy = false;
+  let streamBubble = null;
+  let streamText = "";
 
   function setThread(id, title) {
     threadId = id;
@@ -39,10 +43,27 @@
     rejectBtn.disabled = on;
     messageEl.disabled = on;
     statusLine.classList.toggle("error", false);
+    if (!on) {
+      liveStatus.hidden = true;
+      statusLine.textContent = label;
+    } else if (label) {
+      statusLine.textContent = label;
+    }
+  }
+
+  function setLive(label) {
+    if (!label) {
+      liveStatus.hidden = true;
+      return;
+    }
+    liveStatus.hidden = false;
+    liveStatusText.textContent = label;
+    statusLine.classList.toggle("error", false);
     statusLine.textContent = label;
   }
 
   function setError(msg) {
+    liveStatus.hidden = true;
     statusLine.classList.add("error");
     statusLine.textContent = msg;
   }
@@ -59,6 +80,8 @@
 
   function clearLog() {
     logEl.innerHTML = "";
+    streamBubble = null;
+    streamText = "";
   }
 
   function addBubble(role, text) {
@@ -73,6 +96,38 @@
     div.append(who, body);
     logEl.appendChild(div);
     logEl.scrollTop = logEl.scrollHeight;
+    return div;
+  }
+
+  function ensureStreamBubble() {
+    if (streamBubble) return streamBubble;
+    streamBubble = addBubble("assistant", "");
+    streamBubble.classList.add("streaming");
+    streamText = "";
+    return streamBubble;
+  }
+
+  function appendStreamToken(text) {
+    ensureStreamBubble();
+    streamText += text;
+    streamBubble.querySelector(".body").innerHTML = lightMarkdown(streamText);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function setStreamPartial(text) {
+    ensureStreamBubble();
+    streamText = text || "";
+    streamBubble.querySelector(".body").innerHTML = lightMarkdown(streamText);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function finishStreamBubble() {
+    if (streamBubble) {
+      streamBubble.classList.remove("streaming");
+      if (!streamText.trim()) streamBubble.remove();
+    }
+    streamBubble = null;
+    streamText = "";
   }
 
   function showWelcome() {
@@ -127,6 +182,46 @@
     return data;
   }
 
+  async function streamApi(path, body, onEvent) {
+    const res = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      let detail = `HTTP ${res.status}`;
+      try {
+        const data = await res.json();
+        detail = data.detail || data.error || detail;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(typeof detail === "string" ? detail : `HTTP ${res.status}`);
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop() || "";
+      for (const part of parts) {
+        const line = part
+          .split("\n")
+          .map((l) => l.trim())
+          .find((l) => l.startsWith("data:"));
+        if (!line) continue;
+        const raw = line.slice(5).trim();
+        if (!raw) continue;
+        onEvent(JSON.parse(raw));
+      }
+    }
+  }
+
   function highlightActiveThread() {
     threadList.querySelectorAll(".thread-item").forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.threadId === threadId);
@@ -176,9 +271,7 @@
       for (const msg of data.messages || []) {
         addBubble(msg.role === "user" ? "user" : "assistant", msg.content);
       }
-      if (!(data.messages || []).length) {
-        showWelcome();
-      }
+      if (!(data.messages || []).length) showWelcome();
       showPending(data.pending || []);
       if (data.status === "needs_approval") {
         setBusy(false, "Waiting for your approval…");
@@ -193,17 +286,17 @@
     }
   }
 
-  function handleTurn(data) {
+  function handleDone(data) {
+    finishStreamBubble();
     if (data.thread_id) setThread(data.thread_id);
 
     if (data.status === "error") {
+      setBusy(false);
       setError(data.error || "Something went wrong");
       showPending([]);
       refreshThreadList();
       return;
     }
-
-    if (data.reply) addBubble("assistant", data.reply);
 
     if (data.status === "needs_approval") {
       showPending(data.pending || []);
@@ -217,6 +310,53 @@
     refreshThreadList();
   }
 
+  async function runStream(path, body) {
+    setBusy(true, "Starting…");
+    setLive("Starting…");
+    streamBubble = null;
+    streamText = "";
+    let sawText = false;
+
+    try {
+      await streamApi(path, body, (event) => {
+        const type = event.type;
+        if (type === "meta" && event.thread_id) {
+          setThread(event.thread_id);
+          return;
+        }
+        if (type === "status") {
+          setLive(event.label || "Working…");
+          return;
+        }
+        if (type === "token") {
+          sawText = true;
+          appendStreamToken(event.text || "");
+          return;
+        }
+        if (type === "reply_partial") {
+          sawText = true;
+          setStreamPartial(event.text || "");
+          return;
+        }
+        if (type === "done") {
+          if (event.reply) {
+            if (sawText && streamBubble) {
+              streamText = event.reply;
+              streamBubble.querySelector(".body").innerHTML = lightMarkdown(streamText);
+            } else if (!sawText) {
+              addBubble("assistant", event.reply);
+            }
+          }
+          handleDone(event);
+        }
+      });
+    } catch (err) {
+      finishStreamBubble();
+      setBusy(false);
+      setError(err.message || String(err));
+    }
+  }
+
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     if (busy) return;
@@ -226,18 +366,7 @@
     addBubble("user", message);
     messageEl.value = "";
     if (!threadId) chatTitle.textContent = message.slice(0, 48) || "New chat";
-    setBusy(true, "Thinking… (can take a while)");
-
-    try {
-      const data = await api("/v1/chat", {
-        method: "POST",
-        body: { message, thread_id: threadId },
-      });
-      handleTurn(data);
-    } catch (err) {
-      setBusy(false);
-      setError(err.message || String(err));
-    }
+    await runStream("/v1/chat/stream", { message, thread_id: threadId });
   });
 
   messageEl.addEventListener("keydown", (e) => {
@@ -249,35 +378,15 @@
 
   approveBtn.addEventListener("click", async () => {
     if (busy || !threadId) return;
-    setBusy(true, "Approving…");
-    try {
-      const data = await api("/v1/approve", {
-        method: "POST",
-        body: { thread_id: threadId },
-      });
-      handleTurn(data);
-    } catch (err) {
-      setBusy(false);
-      setError(err.message || String(err));
-    }
+    await runStream("/v1/approve/stream", { thread_id: threadId });
   });
 
   rejectBtn.addEventListener("click", async () => {
     if (busy || !threadId) return;
-    setBusy(true, "Rejecting…");
-    try {
-      const data = await api("/v1/reject", {
-        method: "POST",
-        body: {
-          thread_id: threadId,
-          reason: "User rejected from chat UI",
-        },
-      });
-      handleTurn(data);
-    } catch (err) {
-      setBusy(false);
-      setError(err.message || String(err));
-    }
+    await runStream("/v1/reject/stream", {
+      thread_id: threadId,
+      reason: "User rejected from chat UI",
+    });
   });
 
   newChatBtn.addEventListener("click", () => {
@@ -295,10 +404,7 @@
 
   setThread(threadId);
   refreshThreadList().then(() => {
-    if (threadId) {
-      openThread(threadId);
-    } else {
-      showWelcome();
-    }
+    if (threadId) openThread(threadId);
+    else showWelcome();
   });
 })();

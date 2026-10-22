@@ -11,3 +11,6 @@ rag/index/
 .vscode/
 *.egg-info/
 .pytest_cache/
+*.docx
+*.mdc
+

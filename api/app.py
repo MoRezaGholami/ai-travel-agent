@@ -7,15 +7,17 @@ Run:
 
 from __future__ import annotations
 
+import json
 import threading
 import uuid
+from collections.abc import Iterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from agent.orchestrator import create_travel_orchestrator
@@ -25,6 +27,8 @@ from agent.session import (
     chat,
     get_pending,
     get_thread_history,
+    iter_approve_events,
+    iter_chat_events,
     list_threads,
 )
 from api.schemas import (
@@ -39,6 +43,8 @@ from api.schemas import (
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 _agent: Any | None = None
+# Serialize graph runs: SQLite checkpointer is per-thread_id, but concurrent writes
+# from different HTTP requests must not interleave checkpoint commits.
 _lock = threading.Lock()
 
 
@@ -89,6 +95,22 @@ def health() -> dict[str, str]:
     return {"status": "ok", "agent": "ready" if _agent is not None else "loading"}
 
 
+def _sse(events: Iterator[dict[str, Any]]) -> StreamingResponse:
+    def generate() -> Iterator[str]:
+        for event in events:
+            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @app.post("/v1/chat", response_model=TurnResponse)
 def post_chat(body: ChatRequest) -> TurnResponse:
     """Send a user message. Returns reply or needs_approval + pending tool args."""
@@ -99,20 +121,46 @@ def post_chat(body: ChatRequest) -> TurnResponse:
     return _to_response(result)
 
 
+@app.post("/v1/chat/stream")
+def post_chat_stream(body: ChatRequest) -> StreamingResponse:
+    """SSE: status + tokens + final done event for one chat turn."""
+    thread_id = body.thread_id or str(uuid.uuid4())
+    agent = get_agent()
+
+    def events() -> Iterator[dict[str, Any]]:
+        with _lock:
+            yield from iter_chat_events(agent, thread_id, body.message.strip())
+
+    return _sse(events())
+
+
 @app.post("/v1/approve", response_model=TurnResponse)
 def post_approve(body: ApproveRequest) -> TurnResponse:
-    """Approve the pending create_booking / cancel_booking for this thread."""
+    """Approve pending create_booking / cancel_booking for this thread.
+
+    Idempotent: if nothing is pending, returns status=ok (safe to retry).
+    Multiple action_requests in one interrupt are approved together (all-or-nothing).
+    """
     agent = get_agent()
     with _lock:
         result = approve(agent, body.thread_id, decision="approve")
-    if result.status == "error" and result.error and "No pending" in result.error:
-        raise HTTPException(status_code=409, detail=result.error)
     return _to_response(result)
+
+
+@app.post("/v1/approve/stream")
+def post_approve_stream(body: ApproveRequest) -> StreamingResponse:
+    agent = get_agent()
+
+    def events() -> Iterator[dict[str, Any]]:
+        with _lock:
+            yield from iter_approve_events(agent, body.thread_id, decision="approve")
+
+    return _sse(events())
 
 
 @app.post("/v1/reject", response_model=TurnResponse)
 def post_reject(body: RejectRequest) -> TurnResponse:
-    """Reject the pending action (no booking/cancel is executed)."""
+    """Reject the pending action (no booking/cancel is executed). Idempotent if none."""
     agent = get_agent()
     with _lock:
         result = approve(
@@ -121,9 +169,23 @@ def post_reject(body: RejectRequest) -> TurnResponse:
             decision="reject",
             reason=body.reason,
         )
-    if result.status == "error" and result.error and "No pending" in result.error:
-        raise HTTPException(status_code=409, detail=result.error)
     return _to_response(result)
+
+
+@app.post("/v1/reject/stream")
+def post_reject_stream(body: RejectRequest) -> StreamingResponse:
+    agent = get_agent()
+
+    def events() -> Iterator[dict[str, Any]]:
+        with _lock:
+            yield from iter_approve_events(
+                agent,
+                body.thread_id,
+                decision="reject",
+                reason=body.reason,
+            )
+
+    return _sse(events())
 
 
 @app.get("/v1/threads", response_model=list[ThreadSummary])

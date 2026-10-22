@@ -1,4 +1,8 @@
-"""Destination guide subagent (RAG) — declarative SubAgent spec."""
+"""Destination guide subagent (RAG) — declarative SubAgent spec.
+
+Decision path: orchestrator ``task(destination-agent)`` → only tool
+``search_knowledge`` → ``rag.retriever`` BM25. Orchestrator never calls RAG itself.
+"""
 
 from __future__ import annotations
 
@@ -27,7 +31,7 @@ def build_destination_agent(tools: list[BaseTool]) -> dict[str, Any]:
         "description": (
             "Retrieve destination guide info via RAG: attractions, neighborhoods, "
             "transport, culture tips. Pass a query and optional city "
-            "(istanbul/dubai)."
+            "(e.g. istanbul, dubai, tbilisi, berlin, barcelona)."
         ),
         "system_prompt": SYSTEM_PROMPT,
         "tools": pick_tools(tools, {"search_knowledge"}),

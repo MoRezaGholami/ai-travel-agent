@@ -214,6 +214,47 @@ body {
   flex: 1;
 }
 
+.live-status {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.65rem 0.9rem;
+  border-radius: 14px;
+  border: 1px solid rgba(31, 111, 120, 0.28);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: var(--shadow);
+  font-size: 0.9rem;
+  color: var(--sea-deep);
+}
+
+.live-status[hidden] {
+  display: none !important;
+}
+
+.live-status .pulse {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 50%;
+  background: var(--sea);
+  box-shadow: 0 0 0 0 rgba(31, 111, 120, 0.45);
+  animation: pulse 1.2s ease-out infinite;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(0.9);
+    box-shadow: 0 0 0 0 rgba(31, 111, 120, 0.45);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 8px rgba(31, 111, 120, 0);
+  }
+  100% {
+    transform: scale(0.9);
+    box-shadow: 0 0 0 0 rgba(31, 111, 120, 0);
+  }
+}
+
 .log {
   min-height: 42vh;
   max-height: min(58vh, 560px);
@@ -223,6 +264,23 @@ body {
   flex-direction: column;
   gap: 0.85rem;
   scroll-behavior: smooth;
+}
+
+.bubble.streaming .body::after {
+  content: "";
+  display: inline-block;
+  width: 0.4rem;
+  height: 1em;
+  margin-left: 0.15rem;
+  vertical-align: text-bottom;
+  background: var(--sea);
+  animation: blink 0.9s step-end infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
 }
 
 .bubble {

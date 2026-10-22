@@ -100,6 +100,143 @@ def init_db(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _extra_flights_batch2() -> list[tuple]:
+    """100 more flights (FL101–FL200): same city set, varied dates/times/prices."""
+    # (dest, minutes, airline, code_prefix, base_price)
+    routes: list[tuple[str, int, str, str, float]] = [
+        ("Istanbul", 195, "Turkish Airlines", "TK", 300.0),
+        ("Istanbul", 190, "Pegasus", "PC", 200.0),
+        ("Dubai", 150, "Emirates", "EK", 420.0),
+        ("Dubai", 150, "Flydubai", "FZ", 270.0),
+        ("Doha", 150, "Qatar Airways", "QR", 360.0),
+        ("Baku", 120, "Azerbaijan Airlines", "J2", 190.0),
+        ("Yerevan", 100, "Armenia Airways", "6A", 170.0),
+        ("Tbilisi", 150, "Georgian Airways", "A9", 235.0),
+        ("Ankara", 185, "Pegasus", "PC", 250.0),
+        ("Antalya", 190, "Pegasus", "PC", 240.0),
+        ("Paris", 315, "Air France", "AF", 660.0),
+        ("Frankfurt", 280, "Lufthansa", "LH", 575.0),
+        ("London", 295, "British Airways", "BA", 730.0),
+        ("Rome", 255, "ITA Airways", "AZ", 470.0),
+        ("Vienna", 260, "Austrian Airlines", "OS", 500.0),
+        ("Amsterdam", 270, "KLM", "KL", 560.0),
+        ("Berlin", 260, "Lufthansa", "LH", 490.0),
+        ("Barcelona", 330, "Vueling", "VY", 510.0),
+        ("Madrid", 340, "Iberia", "IB", 530.0),
+        ("Prague", 220, "Czech Airlines", "OK", 405.0),
+        ("Cairo", 200, "EgyptAir", "MS", 345.0),
+        ("Moscow", 220, "Aeroflot", "SU", 350.0),
+        ("Bangkok", 320, "Thai Airways", "TG", 600.0),
+        ("Kuala Lumpur", 300, "Malaysia Airlines", "MH", 545.0),
+        ("Tokyo", 490, "Japan Airlines", "JL", 870.0),
+    ]
+    dep_times = ["05:15", "07:40", "10:05", "13:25", "16:50", "19:30", "22:15"]
+    dates_out = [
+        "2026-12-05", "2026-12-08", "2026-12-12", "2026-12-15",
+        "2026-12-18", "2026-12-22", "2027-01-05", "2027-01-10",
+    ]
+    dates_back = [
+        "2026-12-12", "2026-12-15", "2026-12-19", "2026-12-22",
+        "2026-12-26", "2026-12-29", "2027-01-12", "2027-01-17",
+    ]
+    rows: list[tuple] = []
+    n = 0
+    while len(rows) < 100:
+        dest, mins, airline, prefix, base = routes[n % len(routes)]
+        i = n // len(routes)
+        date = dates_out[i % len(dates_out)]
+        tdep = dep_times[(n + i) % len(dep_times)]
+        hh, mm = map(int, tdep.split(":"))
+        total = hh * 60 + mm + mins
+        arr = f"{(total // 60) % 24:02d}:{total % 60:02d}"
+        price = round(base + (n % 7) * 12.5 - (i % 3) * 8.0, 1)
+        seats = 4 + (n % 17)
+        fid = 101 + n
+        fnum = f"{prefix}{8000 + fid}"
+        if n % 2 == 0:
+            rows.append(
+                (
+                    f"FL{fid:03d}",
+                    "Tehran",
+                    dest,
+                    date,
+                    tdep,
+                    arr,
+                    mins,
+                    airline,
+                    fnum,
+                    price,
+                    seats,
+                )
+            )
+        else:
+            back = dates_back[i % len(dates_back)]
+            rows.append(
+                (
+                    f"FL{fid:03d}",
+                    dest,
+                    "Tehran",
+                    back,
+                    tdep,
+                    arr,
+                    mins,
+                    airline,
+                    fnum,
+                    round(price - 8.0, 1),
+                    seats,
+                )
+            )
+        n += 1
+    return rows
+
+
+def _extra_hotels_batch2() -> list[tuple]:
+    """100 more hotels (HT101–HT200): existing cities, new names/stars/prices."""
+    city_templates: list[tuple[str, list[str]]] = [
+        ("Istanbul", ["Golden Horn Suites", "Moda Pier Hotel", "Cihangir Loft Inn", "Eyup Hillside Stay"]),
+        ("Dubai", ["Marina Walk Hotel", "Satwa Comfort Inn", "City Walk Residences", "Hatta Mountain Lodge"]),
+        ("Tehran", ["Jordan Avenue Hotel", "Vanak Square Suites", "Niavaran Garden Inn", "Rey Transit Stay"]),
+        ("Baku", ["Icherisheher Loft", "Bulvar Night Hotel", "Sahil Budget Rooms", "Ganjlik Metro Inn"]),
+        ("Paris", ["Marais Canal Hotel", "Latin Quarter Nest", "Opera Passage Inn", "Belleville Soft Stay"]),
+        ("London", ["Shoreditch Warehouse Hotel", "Camden Lock Inn", "South Bank View", "Greenwich Budget Lodge"]),
+        ("Rome", ["Prati Quiet Hotel", "Testaccio Local Inn", "Ostiense Modern Stay", "Navona Steps Suites"]),
+        ("Tokyo", ["Ueno Park Hotel", "Nakameguro Soft Inn", "Roppongi Hills Stay", "Kichijoji Local Lodge"]),
+        ("Bangkok", ["Ari Garden Hotel", "Riverside Night Market Inn", "Silom Business Stay", "Chatuchak Budget"]),
+        ("Tbilisi", ["Sololaki Hill Hotel", "Vera Cafe District Inn", "Abotubani Spa Stay", "Station Square Lodge"]),
+        ("Vienna", ["Naschmarkt Boutique", "Prater Park Inn", "Spittelberg Quiet Hotel", "Westbahnhof Soft Stay"]),
+        ("Amsterdam", ["De Pijp Market Hotel", "Noord Ferry Inn", "Oud West Local Stay", "Museum Quarter Nest"]),
+        ("Berlin", ["Prenzlauer Berg Hotel", "Neukolln Canal Inn", "Charlottenburg Soft", "Alexanderplatz Stay"]),
+        ("Barcelona", ["Gracia Plaza Hotel", "Born Canal Suites", "Poblenou Beach Inn", "Sants Station Lodge"]),
+        ("Madrid", ["Malasana Night Hotel", "Lavapies Local Inn", "Chamberi Quiet Stay", "Atocha Transit Lodge"]),
+        ("Prague", ["Vinohrady Garden Hotel", "Zizkov Tower Inn", "Mala Strana Steps", "Holesovice Soft Stay"]),
+        ("Cairo", ["Garden City Nile Hotel", "Islamic Cairo Inn", "Maadi Quiet Suites", "Giza View Lodge"]),
+        ("Moscow", ["Patriarch Ponds Hotel", "Arbat Lane Inn", "Kitai Gorod Stay", "VDNKh Park Lodge"]),
+        ("Antalya", ["Kaleici Stone Hotel", "Lara Soft Resort", "Side Ancient Inn", "Kas Cliff Stay"]),
+        ("Yerevan", ["Cascade Steps Hotel", "Republic Park Inn", "Kond Old Town Stay", "Dalma Soft Lodge"]),
+        ("Frankfurt", ["Sachsenhausen Apple Inn", "Main River Suites", "Bahnhofsviertel Stay", "Ostend Quiet Hotel"]),
+        ("Doha", ["Souq Waqif Nest", "West Bay Tower Inn", "The Pearl Marina Stay", "Katara Cultural Lodge"]),
+        ("Kuala Lumpur", ["Bukit Bintang Lights Hotel", "Chin Chow Heritage Inn", "KLCC View Stay", "Bangsar Local Lodge"]),
+        ("Milan", ["Brera Art Hotel", "Isola Modern Inn", "Navigli Evening Stay", "Centrale Transit Lodge"]),
+        ("Budapest", ["Jewish Quarter Inn", "Castle Hill Soft Hotel", "Margaret Island View", "Keleti Station Stay"]),
+    ]
+    suffixes = ["", " II", " Annex", " Residence"]
+    rows: list[tuple] = []
+    hid = 101
+    while len(rows) < 100:
+        for city, names in city_templates:
+            if len(rows) >= 100:
+                break
+            idx = hid - 101
+            name = names[idx % len(names)] + suffixes[(idx // len(names)) % len(suffixes)]
+            stars = 2 + (idx % 4)
+            base = {2: 32.0, 3: 58.0, 4: 98.0, 5: 175.0}[stars]
+            price = round(base + (hid % 9) * 4.5 + (len(city) % 5) * 2.0, 1)
+            rooms = 3 + (hid % 16)
+            rows.append((f"HT{hid:03d}", city, name.strip(), stars, price, rooms))
+            hid += 1
+    return rows[:100]
+
+
 def seed_if_empty(conn: sqlite3.Connection) -> None:
     """Ensure full flight/hotel catalog exists (INSERT OR IGNORE).
 
@@ -214,8 +351,8 @@ def seed_if_empty(conn: sqlite3.Connection) -> None:
                 ("FL098", "Tehran", "Isfahan", "2026-12-03", "09:00", "10:10", 70, "Iran Air", "IR340", 95.0, 22),
                 ("FL099", "Isfahan", "Tehran", "2026-12-10", "18:00", "19:10", 70, "Iran Air", "IR341", 90.0, 20),
                 ("FL100", "Tehran", "Shiraz", "2026-12-04", "07:30", "09:00", 90, "Mahan Air", "W5100", 110.0, 18),
-
-            ],
+            ]
+            + _extra_flights_batch2(),
         )
 
     conn.executemany(
@@ -325,8 +462,8 @@ def seed_if_empty(conn: sqlite3.Connection) -> None:
                 ("HT098", "Seoul", "Myeongdong Central Hotel", 4, 130.0, 8),
                 ("HT099", "Hong Kong", "Victoria Harbour Suites", 5, 290.0, 3),
                 ("HT100", "Shanghai", "Bund Heritage Hotel", 5, 220.0, 4),
-
-            ],
+            ]
+            + _extra_hotels_batch2(),
         )
 
     conn.commit()
